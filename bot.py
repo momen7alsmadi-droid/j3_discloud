@@ -153,6 +153,7 @@ class JailBot(commands.Bot):
         self.add_view(SettingsPanelView())
         await self.tree.sync()
         auto_unjail_task.start()
+        keep_alive_task.start()
 
 
 bot = JailBot()
@@ -1077,10 +1078,42 @@ async def jaillist_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
+# ================= مهمة البقاء نشطاً لـ Render (إرسال رسالة كل 14 دقيقة) =================
+KEEP_ALIVE_CHANNEL_ID = "1530910507408560128"
+
+@tasks.loop(minutes=14)
+async def keep_alive_task():
+    """
+    ترسل رسالة كل 14 دقيقة لروم معين لمنع Render من إطفاء البوت.
+    """
+    channel_id = os.environ.get("KEEP_ALIVE_CHANNEL_ID", "") or config.get("keep_alive_channel_id", KEEP_ALIVE_CHANNEL_ID)
+    if not channel_id:
+        return
+    channel = bot.get_channel(int(channel_id))
+    if channel:
+        try:
+            await channel.send("🟢 البوت نشط")
+        except discord.HTTPException:
+            pass
+
+@keep_alive_task.before_loop
+async def before_keep_alive_task():
+    await bot.wait_until_ready()
+
+
 # ================= أحداث =================
 @bot.event
 async def on_ready():
     print(f"تم تسجيل الدخول باسم {bot.user} ({bot.user.id})")
+    # إرسال رسالة ترحيب عند التشغيل
+    channel_id = os.environ.get("KEEP_ALIVE_CHANNEL_ID", "") or config.get("keep_alive_channel_id", KEEP_ALIVE_CHANNEL_ID)
+    if channel_id:
+        channel = bot.get_channel(int(channel_id))
+        if channel:
+            try:
+                await channel.send("🚀 **البوت شغال!** تم النشر على Render بنجاح ✅")
+            except discord.HTTPException:
+                pass
 
 
 @bot.event

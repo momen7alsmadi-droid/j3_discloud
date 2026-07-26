@@ -19,3 +19,5 @@ services:
     envVars:
       - key: TOKEN
         sync: false
+      - key: KEEP_ALIVE_CHANNEL_ID
+        value: 1530910507408560128
