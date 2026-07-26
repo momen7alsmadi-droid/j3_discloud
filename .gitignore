@@ -1,0 +1,16 @@
+# 🔒 الملفات الحساسة - لا ترفع أبداً!
+config.json
+database.json
+
+# 🐍 Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# 🗄️ بقية
+*.tmp
+.env
+*.log
