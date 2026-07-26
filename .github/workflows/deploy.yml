@@ -1,0 +1,28 @@
+# GitHub Actions Workflow: Deploy to Koyeb (Free Hosting)
+# You need to add your Koyeb API token as a GitHub Secret:
+#   1. Go to https://app.koyeb.com/account/api (create an API token)
+#   2. Go to your GitHub repo → Settings → Secrets and variables → Actions
+#   3. Add secret: KOYEB_TOKEN = your Koyeb API token
+
+name: Deploy to Koyeb
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Koyeb
+        uses: koyeb/action-deploy@v1
+        with:
+          api_token: ${{ secrets.KOYEB_TOKEN }}
+          app_name: j3-jail-bot
+          service_name: bot
+          service_port: 8080
+          env: |
+            TOKEN: ${{ secrets.BOT_TOKEN }}

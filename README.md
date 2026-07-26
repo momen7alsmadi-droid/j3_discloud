@@ -5,30 +5,53 @@
 
 ---
 
-## 🚀 النشر على DisCloud (مجاني)
+## 🚀 النشر على منصة مجانية (Koyeb) — الأفضل 🏆
 
-هذا المشروع معد مسبقاً للنشر على **DisCloud** (منصة استضافة مجانية لبوتات ديسكورد).
+**Koyeb** منصة استضافة مجانية بالكامل (بدون بطاقة ائتمان). تدوم للأبد.
 
-### الخطوات:
+### خطوات النشر (مرة واحدة فقط):
 
-1. **سجل حساب** في [discloud.com](https://discloud.com)
-2. **اربط حساب ديسكورد** الخاص بك
-3. **اضغط على "Upload Bot"** وارفع ملف `j3_discloud.zip` (أو كل ملفات المشروع)
-4. **من لوحة التحكم** اذهب إلى إعدادات البوت و **ضع التوكن في متغير البيئة**:
-   - اسم المتغير: `TOKEN`
-   - القيمة: `ضع_توكن_البوت_هنا` (انسخه من [Discord Developer Portal](https://discord.com/developers/appplications))
+1. **سجل حساب** في [koyeb.com](https://www.koyeb.com) (يكفي بريد إلكتروني)
+2. **اربط حساب GitHub** الخاص بك مع Koyeb
+3. **افتح** [تطبيق Discord Developer Portal](https://discord.com/developers/applications)
+   - اذهب إلى البوت ← Bot → نسخ **Token**
+4. **في Koyeb:**
+   - اضغط **Create App** → **Deploy from Git (Dockerfile)**
+   - اختر repo: `momen7alsmadi-droid/j3_discloud`
+   - في **Environment Variables** أضف:
+     - `TOKEN` ← `ضع_توكن_البوت_هنا`
+   - اضغط **Deploy** 🚀
 
-> ⚠️ **تنبيه أمني مهم**: لا تضع التوكن داخل `config.json` عند رفع المشروع على GitHub.  
-> استخدم متغير البيئة `TOKEN` في DisCloud بدلاً من ذلك.
+> البوت سيعمل 24/7 مجاناً ✅
 
-### ملفات الإستضافة المرفقة:
+## 🚀 البديل الثاني: Render (مجاني)
 
-| الملف | الوظيفة |
-|---|---|
-| `discloud.config` | إعدادات DisCloud (نوع البوت، الذاكرة، إلخ) |
-| `requirements.txt` | المكتبات المطلوبة (`discord.py==2.7.1`) |
-| `start.sh` | سكريبت التشغيل |
-| `bot.py` | كود البوت الرئيسي |
+1. **سجل حساب** في [render.com](https://render.com) (اربط GitHub)
+2. اضغط **New +** → **Web Service** → اختر repo `j3_discloud`
+3. الإعدادات:
+   - **Runtime**: `Docker`
+   - **Branch**: `main`
+4. أضف متغير البيئة: `TOKEN` ← قيمة التوكن
+5. اضغط **Create Web Service** ✅
+
+> ⚠️ في Render الفئة المجانية، البوت قد يتوقف بعد 15 دقيقة من عدم النشاط → استخدم **Koyeb** بدلاً منه.
+
+## 🚀 النشر على DisCloud (إذا كانت الخدمة متاحة)
+
+```yaml
+# ملف discloud.config موجود مسبقاً
+ID=1528694752336416768
+TYPE=bot
+MAIN=bot.py
+RAM=100
+AUTORESTART=true
+VERSION=latest
+```
+
+> **ملاحظة**: DisCloud أغلقت الخدمة المجانية حالياً.
+
+> ⚠️ **تنبيه أمني مهم في جميع المنصات**:  
+> لا تضع التوكن داخل `config.json` — استخدم متغير البيئة `TOKEN`.
 
 ---
 

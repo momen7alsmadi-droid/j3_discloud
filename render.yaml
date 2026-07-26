@@ -1,0 +1,21 @@
+# Render Deployment Configuration
+# https://render.com - Free Tier Available
+#
+# How to deploy:
+# 1. Push this repo to GitHub
+# 2. Go to https://dashboard.render.com
+# 3. Click "New +" → "Blueprint" (uses render.yaml)
+#    OR "New +" → "Web Service" (connect your GitHub repo)
+# 4. Set Environment Variable:
+#    - Key: TOKEN
+#    - Value: <your-bot-token>
+
+services:
+  - type: worker
+    name: j3-jail-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: TOKEN
+        sync: false
