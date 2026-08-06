@@ -1,13 +1,15 @@
 {
   "name": "j3_discloud",
-  "version": "1.1.0",
-  "description": "بوت السجن (Jail Bot) - Python wrapped for Node.js hosting (Pterodactyl)",
-  "main": "index.js",
+  "version": "2.0.0",
+  "description": "بوت السجن (Jail Bot) - نسخة JavaScript (discord.js) تعمل على استضافات Node.js مباشرة",
+  "main": "bot.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node bot.js"
   },
   "engines": {
-    "node": ">=16"
+    "node": ">=18"
   },
-  "dependencies": {}
+  "dependencies": {
+    "discord.js": "^14.16.3"
+  }
 }
