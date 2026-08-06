@@ -52,6 +52,18 @@ function tryRun(cmd) {
   }
 }
 
+/** تنفيذ أمر بصمت مع التقاط سبب الفشل (أول 250 حرفاً) */
+function tryRunVerbose(cmd, label) {
+  try {
+    execSync(cmd, { stdio: 'ignore' });
+    return true;
+  } catch (e) {
+    const msg = String(e.stderr || e.message || '').trim().split('\n').slice(0, 6).join('\n');
+    console.log(`   ✖ ${label} فشل${msg ? ':\n     ' + msg.slice(0, 250) : ''}`);
+    return false;
+  }
+}
+
 /** هل python3 (أو python) متوفر؟ */
 function findPython() {
   if (tryRun('python3 --version')) return 'python3';
@@ -93,13 +105,17 @@ function ensurePip(py) {
   }
   console.log('⚠️ pip غير موجود — أحاول تثبيته...');
 
+  // تشخيص البيئة (لمساعدة الدعم الفني)
+  console.log('   [تشخيص] المستخدم الحالي: ' + (tryRun('whoami') ? execSync('whoami').toString().trim() : '?'));
+  console.log('   [تشخيص] HOME: ' + (process.env.HOME || 'غير معرف'));
+
   // أ) python3 -m ensurepip (مرفق مع معظم توزيعات Python)
-  if (tryRun(`${py} -m ensurepip --upgrade`)) {
+  if (tryRunVerbose(`${py} -m ensurepip --upgrade`, 'ensurepip')) {
     if (hasPip(py)) { console.log('✅ pip ثُبّت عبر ensurepip'); return; }
   }
 
-  // ب) apt-get (إن كنا root — وغالباً نحن كذلك داخل الحاوية)
-  if (tryRun('apt-get update -qq && apt-get install -y -qq python3-pip')) {
+  // ب) apt-get (يتطلب صلاحيات Root)
+  if (tryRunVerbose('apt-get update -qq && apt-get install -y -qq python3-pip', 'apt-get')) {
     if (hasPip(py)) { console.log('✅ pip ثُبّت عبر apt'); return; }
   }
 
@@ -108,6 +124,7 @@ function ensurePip(py) {
   const getPip = path.join(__dirname, 'get-pip.py');
   try {
     download(GET_PIP_URL, getPip);
+    console.log('   ✓ تم تنزيل get-pip.py (' + fs.statSync(getPip).size + ' bytes)');
     const variants = [
       `${py} "${getPip}" --user`,
       `${py} "${getPip}"`,
@@ -115,17 +132,23 @@ function ensurePip(py) {
       `${py} "${getPip}" --break-system-packages`,
     ];
     for (const cmd of variants) {
-      if (tryRun(cmd) && hasPip(py)) {
-        console.log('✅ pip ثُبّت عبر get-pip.py');
-        return;
+      if (tryRunVerbose(cmd, 'get-pip.py (' + cmd.split('get-pip.py')[1].trim() + ')')) {
+        if (hasPip(py)) {
+          console.log('✅ pip ثُبّت عبر get-pip.py');
+          return;
+        }
       }
     }
   } catch (e) {
-    console.log('   (فشل تنزيل get-pip.py: ' + e.message + ')');
+    console.log('   ✖ فشل تنزيل get-pip.py: ' + e.message + ' ← هل الحاوية متصلة بالإنترنت؟');
   }
 
   console.error('❌ تعذر تثبيت pip تلقائياً بأي طريقة.');
-  console.error('💡 الحل: اطلب من دعم الاستضافة تنفيذ: apt-get install -y python3-pip');
+  console.error('💡 هذا عادةً بسبب: (1) عدم صلاحيات Root، أو (2) حظر الاتصال بـ pypi.org.');
+  console.error('📨 أرسل للدعم الفني هذا النص:');
+  console.error('  "الرجاء تثبيت python3-pip داخل حاوية الخادم، أو تغيير Docker Image');
+  console.error('   إلى صورة Python تحتوي pip، أو تفعيل الاتصال بالإنترنت من الحاوية.');
+  console.error('   المشروع يحتاج pip لتثبيت discord.py من requirements.txt."');
   process.exit(1);
 }
 
