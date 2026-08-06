@@ -1,10 +1,18 @@
-# GitHub Actions Workflow: Deploy to Koyeb (Free Hosting)
-# You need to add your Koyeb API token as a GitHub Secret:
-#   1. Go to https://app.koyeb.com/account/api (create an API token)
-#   2. Go to your GitHub repo → Settings → Secrets and variables → Actions
-#   3. Add secret: KOYEB_TOKEN = your Koyeb API token
+# =========================================================
+# GitHub Actions Workflow: Deploy to Koyeb (اختياري)
+# =========================================================
+# ملاحظة: هذا الـ Workflow اختياري — يتخطى نفسه بهدوء إن لم
+# تكن قد أعددت النشر على Koyeb، فلا يسبب أي رسائل خطأ.
+#
+# لإعداد النشر على Koyeb:
+#   1. https://app.koyeb.com/account/api → أنشئ API token
+#   2. GitHub repo → Settings → Secrets and variables → Actions
+#   3. أضف سراً: KOYEB_TOKEN = المفتاح
+#   4. (اختياري) أضف سراً: BOT_TOKEN = توكن البوت
+#   5. بعدها كل دفعة تنشر تلقائياً إلى Koyeb
+# =========================================================
 
-name: Deploy to Koyeb
+name: Deploy to Koyeb (optional)
 
 on:
   push:
@@ -14,6 +22,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # تخطَّ الجوب بالكامل إن لم يُضبط مفتاح Koyeb (لا فشل ولا بريد خطأ)
+    if: ${{ secrets.KOYEB_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
 
