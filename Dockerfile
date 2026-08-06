@@ -12,7 +12,8 @@ COPY discloud.config .
 COPY start.sh .
 COPY config.example.json .
 
-# البوت يقرأ التوكن من متغير البيئة TOKEN تلقائياً
-# (راجع السطر الأخير من bot.py)
+# منفذ خادم HTTP للحفاظ على نشاط الخدمة على Render
+EXPOSE 8080
 
+# البوت يقرأ التوكن من متغير البيئة TOKEN تلقائياً
 CMD ["python", "bot.py"]

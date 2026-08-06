@@ -3,6 +3,7 @@ import os
 import re
 import asyncio
 import time
+import threading
 from datetime import datetime, timezone
 
 import discord
@@ -1184,8 +1185,36 @@ async def before_auto_unjail_task():
     await bot.wait_until_ready()
 
 
+# ================= خادم HTTP للحفاظ على نشاط الخدمة على Render =================
+# Render يعتبر النشر "فاشلاً" إن لم يستجب الخدمة على منفذ HTTP
+# (خصوصاً مع نوع Web Service). هذا الخادم الصغير يجيب 200 دائماً
+# حتى يعتبر Render الخدمة حية — ولا يؤثر على الاستضافات الأخرى.
+def _start_http_keepalive() -> None:
+    try:
+        import http.server
+
+        class _Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"OK")
+
+            def log_message(self, *args):  # إسكات سجلات الخادم
+                pass
+
+        port = int(os.environ.get("PORT", "8080"))
+        httpd = http.server.ThreadingHTTPServer(("0.0.0.0", port), _Handler)
+        httpd.serve_forever()
+    except Exception:
+        pass  # المنفذ مشغول أو البيئة لا تدعمه — نكمل بدون خادم
+
+
 # ================= تشغيل البوت =================
 if __name__ == "__main__":
+    # إبقاء الخدمة حية على Render (Web Service يتطلب استجابة HTTP)
+    threading.Thread(target=_start_http_keepalive, daemon=True).start()
+
     token = os.environ.get("TOKEN", "") or config.get("token", "")
     if not token:
         raise SystemExit("الرجاء وضع التوكن في متغير البيئة TOKEN أو داخل config.json.")

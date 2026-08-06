@@ -9,15 +9,21 @@
 # 4. Set Environment Variable:
 #    - Key: TOKEN
 #    - Value: <your-bot-token>
+#
+# ملاحظة: الخدمة من نوع worker (لا تحتاج HTTP)، لكن البوت
+# يتضمن خادم HTTP صغيراً (PORT أو 8080) — يعمل حتى لو أنشأت
+# الخدمة كنوع Web Service.
 
 services:
   - type: worker
     name: j3-jail-bot
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python bot.py
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
     envVars:
       - key: TOKEN
         sync: false
       - key: KEEP_ALIVE_CHANNEL_ID
-        value: 1530910507408560128
+        value: "1530910507408560128"
+      - key: PORT
+        value: "8080"
