@@ -4,7 +4,8 @@
   "description": "بوت السجن (Jail Bot) - نسخة JavaScript (discord.js) تعمل على استضافات Node.js مباشرة",
   "main": "bot.js",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node bot.js",
+    "build": "echo 'لا حاجة لخطوة بناء — البوت جاهز'"
   },
   "engines": {
     "node": ">=18"

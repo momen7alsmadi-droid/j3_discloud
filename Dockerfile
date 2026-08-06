@@ -8,7 +8,7 @@ WORKDIR /app
 
 # تثبيت الاعتماديات (discord.js) — يتطلب الإنترنت أثناء البناء
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev || npm install
+RUN npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no-fund
 
 # نسخ ملفات المشروع (config.json و database.json و .env مستثناة عبر .dockerignore)
 COPY bot.js index.js config.example.json ./
