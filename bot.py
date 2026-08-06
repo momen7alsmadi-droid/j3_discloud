@@ -16,9 +16,30 @@ DEV_USERNAME = "m_smadi"
 
 CONFIG_FILE = "config.json"
 DATABASE_FILE = "database.json"
+ENV_FILE = ".env"
 
 _db_lock = asyncio.Lock()
 _config_lock = asyncio.Lock()
+
+
+def load_dotenv_file(path: str = ENV_FILE) -> None:
+    """قراءة ملف .env (سطر KEY=VALUE لكل سطر) وإضافتها إلى متغيرات البيئة.
+    الملف غير مرفوع على GitHub (.gitignore يستبعده) — يحمي التوكن."""
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except OSError:
+        pass
 
 
 # ================= إدارة الملفات =================
@@ -1212,6 +1233,9 @@ def _start_http_keepalive() -> None:
 
 # ================= تشغيل البوت =================
 if __name__ == "__main__":
+    # قراءة ملف .env أولاً (التوكن يكون هنا أو في متغير البيئة TOKEN)
+    load_dotenv_file(ENV_FILE)
+
     # إبقاء الخدمة حية على Render (Web Service يتطلب استجابة HTTP)
     threading.Thread(target=_start_http_keepalive, daemon=True).start()
 
