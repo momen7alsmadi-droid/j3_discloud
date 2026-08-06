@@ -1,18 +1,9 @@
+# =========================================================
 # Render Deployment Configuration
-# https://render.com - Free Tier Available
-#
-# How to deploy:
-# 1. Push this repo to GitHub
-# 2. Go to https://dashboard.render.com
-# 3. Click "New +" → "Blueprint" (uses render.yaml)
-#    OR "New +" → "Web Service" (connect your GitHub repo)
-# 4. Set Environment Variable:
-#    - Key: TOKEN
-#    - Value: <your-bot-token>
-#
-# ملاحظة: الخدمة من نوع worker (لا تحتاج HTTP)، لكن البوت
-# يتضمن خادم HTTP صغيراً (PORT أو 8080) — يعمل حتى لو أنشأت
-# الخدمة كنوع Web Service.
+# =========================================================
+# الخدمة تبني عبر Dockerfile (نسخة Node.js) ثم تشغّل البوت.
+# التوكن يُقرأ من متغير البيئة TOKEN أو من ملف .env
+# (البوت لا يخرج عند غيابه — يعيد المحاولة كل 30 ثانية).
 
 services:
   - type: worker

@@ -1,19 +1,20 @@
-FROM python:3.11-slim
+# =========================================================
+# Dockerfile — نسخة JavaScript (discord.js)
+# يعمل على أي نظام بناء يستخدم Docker (Render / الشركات)
+# =========================================================
+FROM node:20-slim
 
 WORKDIR /app
 
-# تثبيت المكتبات
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# تثبيت الاعتماديات (discord.js) — يتطلب الإنترنت أثناء البناء
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev || npm install
 
-# نسخ ملفات المشروع فقط (config.json و database.json مستثنيان عبر .dockerignore)
-COPY bot.py .
-COPY discloud.config .
-COPY start.sh .
-COPY config.example.json .
+# نسخ ملفات المشروع (config.json و database.json و .env مستثناة عبر .dockerignore)
+COPY bot.js index.js config.example.json ./
 
-# منفذ خادم HTTP للحفاظ على نشاط الخدمة على Render
+# منفذ خادم HTTP لإبقاء الخدمة حية
 EXPOSE 8080
 
-# البوت يقرأ التوكن من متغير البيئة TOKEN تلقائياً
-CMD ["python", "bot.py"]
+# تشغيل البوت
+CMD ["node", "bot.js"]
