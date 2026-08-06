@@ -201,6 +201,20 @@ async function requireJailPermission(interaction) {
   return false;
 }
 
+/** صلاحية أمر الكتابة — مطابقة /jail تماماً */
+async function messageHasJailPermission(message) {
+  if (isDev(message.author.id)) return true;
+  if (message.member.permissions.has(PermissionFlagsBits.Administrator)) return true;
+  const db = loadDatabase();
+  const entry = getGuildEntry(db, message.guild.id);
+  const allowedIds = new Set(entry.allowed_ids);
+  if (allowedIds.has(message.author.id)) return true;
+  for (const role of message.member.roles.cache.values()) {
+    if (allowedIds.has(role.id)) return true;
+  }
+  return false;
+}
+
 function botCanManageMember(guild, member) {
   const me = guild.members.me;
   if (!me) return false;
@@ -430,51 +444,41 @@ function sleep(ms) {
 }
 
 // ================= عمليات السجن =================
-async function applyJail(interaction, member, reason, durationStr, isMass) {
+/**
+ * تنفيذ السجن الفعلي — مشترك بين أمر /jail وأمر الكتابة (سجن @عضو)
+ * يرجع { ok: true, result } أو { ok: false, error }
+ */
+async function performJail(guild, actorUserId, actorMember, member, reason, durationStr) {
   const jailRoleId = config.jail_role_id;
-  if (!jailRoleId) {
-    await interaction.followUp({ content: 'لم يتم تحديد رتبة السجن بعد. استخدم /settings.', ephemeral: true });
-    return null;
-  }
-  const jailRole = interaction.guild.roles.cache.get(String(jailRoleId));
-  if (!jailRole) {
-    await interaction.followUp({ content: 'رتبة السجن المحددة غير موجودة في السيرفر.', ephemeral: true });
-    return null;
-  }
+  if (!jailRoleId) return { ok: false, error: 'لم يتم تحديد رتبة السجن بعد. استخدم /settings.' };
+  const jailRole = guild.roles.cache.get(String(jailRoleId));
+  if (!jailRole) return { ok: false, error: 'رتبة السجن المحددة غير موجودة في السيرفر.' };
 
   let endTimestamp = null;
   let durationLabel = 'مؤبد';
   if (durationStr) {
     const seconds = parseDuration(durationStr);
-    if (seconds == null) {
-      await interaction.followUp({ content: `صيغة المدة غير صحيحة. ${DURATION_HELP}`, ephemeral: true });
-      return null;
-    }
+    if (seconds == null) return { ok: false, error: `صيغة المدة غير صحيحة. ${DURATION_HELP}` };
     endTimestamp = Math.floor(Date.now() / 1000) + seconds;
     durationLabel = durationStr;
   }
 
-  const originalRoleIds = member.roles.cache
-    .filter((r) => r.id !== interaction.guild.id)
-    .map((r) => r.id);
+  const originalRoleIds = member.roles.cache.filter((r) => r.id !== guild.id).map((r) => r.id);
 
   try {
     const rolesToRemove = member.roles.cache
-      .filter((r) => r.id !== interaction.guild.id && r.id !== jailRole.id)
+      .filter((r) => r.id !== guild.id && r.id !== jailRole.id)
       .map((r) => r);
-    if (rolesToRemove.length) await member.roles.remove(rolesToRemove, 'سجن' + (isMass ? ' جماعي' : ''));
-    if (!member.roles.cache.has(jailRole.id)) {
-      await member.roles.add(jailRole, 'سجن' + (isMass ? ' جماعي' : ''));
-    }
+    if (rolesToRemove.length) await member.roles.remove(rolesToRemove, 'سجن');
+    if (!member.roles.cache.has(jailRole.id)) await member.roles.add(jailRole, 'سجن');
   } catch {
-    await interaction.followUp({ content: 'صلاحيات البوت غير كافية لتعديل رتب هذا العضو.', ephemeral: true });
-    return null;
+    return { ok: false, error: 'صلاحيات البوت غير كافية لتعديل رتب هذا العضو.' };
   }
 
-  const channelOverwrites = await stripMemberChannelOverwrites(interaction.guild, member);
+  const channelOverwrites = await stripMemberChannelOverwrites(guild, member);
 
   const db = loadDatabase();
-  const entry = getGuildEntry(db, interaction.guild.id);
+  const entry = getGuildEntry(db, guild.id);
   const userKey = String(member.id);
   const priors = (entry.prisoners[userKey]?.priors || 0) + 1;
 
@@ -484,11 +488,53 @@ async function applyJail(interaction, member, reason, durationStr, isMass) {
     end_time: endTimestamp,
     priors,
     reason,
-    jailed_by: interaction.user.id,
+    jailed_by: actorUserId,
   };
   await saveDatabase(db);
 
-  return { endTimestamp, durationLabel, priors, channelOverwrites };
+  return { ok: true, result: { endTimestamp, durationLabel, priors, channelOverwrites } };
+}
+
+/** نسخة التفاعل: تنفذ السجن وترد الأخطاء عبر followUp */
+async function applyJail(interaction, member, reason, durationStr, isMass) {
+  const res = await performJail(
+    interaction.guild,
+    interaction.user.id,
+    interaction.member,
+    member,
+    reason,
+    durationStr
+  );
+  if (!res.ok) {
+    await interaction.followUp({ content: res.error, ephemeral: true });
+    return null;
+  }
+  return res.result;
+}
+
+/** فحوصات الهدف المشتركة — يرجع رسالة الخطأ أو null عند القبول */
+function jailTargetError(actorMember, actorUserId, member, jailRole, guild) {
+  if (isDev(member.id)) return 'لا يمكنك سجن مطور البوت!';
+  if (member.user.bot) return 'لا يمكن سجن حسابات البوتات.';
+  if (member.id === actorUserId) return 'لا يمكنك سجن نفسك.';
+  if (!jailRole) return 'رتبة السجن المحددة غير موجودة في السيرفر.';
+  if (member.roles.cache.has(jailRole.id)) return 'هذا العضو مسجون بالفعل.';
+  if (!botCanManageMember(guild, member)) return 'رتبة هذا العضو أعلى من رتبة البوت، لا يمكن تعديل رتبه.';
+  if (
+    actorMember.roles.highest.comparePositionTo(member.roles.highest) <= 0 &&
+    guild.ownerId !== actorUserId &&
+    !isDev(actorUserId)
+  ) {
+    return 'لا يمكنك سجن عضو برتبة أعلى من رتبتك أو مساوية لها.';
+  }
+  return null;
+}
+
+/** استخراج مدة من نص رسالة (مثل 1h أو 30s أو 2d أو 3mo) */
+function extractDurationFromText(text) {
+  const match = text.match(/(^|\s)(\d+)(mo|m|s|h|d|w)(\s|$)/i);
+  if (!match) return null;
+  return match[2] + match[3].toLowerCase();
 }
 
 // ================= العميل =================
@@ -497,6 +543,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
   ],
 });
 
@@ -1377,6 +1424,118 @@ client.on(Events.GuildMemberAdd, async (member) => {
   await sendLog(member.guild, embed);
 });
 
+// ================= أمر الكتابة: سجن @عضو [المدة] [السبب] =================
+// يعمل في أي شات: سجن @عضو → مؤبد | سجن @عضو 1h → ساعة | سجن @عضو 1h سبب...
+client.on(Events.MessageCreate, async (message) => {
+  if (message.author.bot) return;
+  if (!message.guild || !message.member) return;
+
+  const content = message.content.trim();
+  if (!content.startsWith('سجن')) return;
+
+  // استخراج الآيديات (منشنات + آيديات مكتوبة)
+  const mentionIds = [...message.mentions.users.keys()];
+  const idsFromText = extractUserIds(content);
+  const targetIds = [...new Set([...mentionIds, ...idsFromText])];
+  if (!targetIds.length) return; // تبدأ بـ سجن بدون منشن — ليست أمراً
+
+  // الصلاحية: مطابقة /jail (مطور، أدمن، أو في قائمة الصلاحيات)
+  if (!(await messageHasJailPermission(message))) {
+    await message.reply('ليس لديك صلاحية استخدام هذا الأمر.');
+    return;
+  }
+
+  const jailRoleId = config.jail_role_id;
+  if (!jailRoleId) {
+    await message.reply('لم يتم تحديد رتبة السجن بعد. استخدم /settings.');
+    return;
+  }
+  const jailRole = message.guild.roles.cache.get(String(jailRoleId));
+  if (!jailRole) {
+    await message.reply('رتبة السجن المحددة غير موجودة في السيرفر.');
+    return;
+  }
+
+  // المدة والسبب
+  const duration = extractDurationFromText(content);
+  let reason = content.replace(/<@!?\d+>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (duration) {
+    reason = reason.replace(new RegExp(`\\b${duration}\\b`, 'gi'), ' ');
+  }
+  reason = reason.replace(/^سجن\s*/i, '').replace(/\s+/g, ' ').trim();
+
+  const jailedMembers = [];
+  const skipped = [];
+
+  for (const targetId of targetIds) {
+    const member = await getMember(message.guild, targetId);
+    if (!member) {
+      skipped.push([targetId, 'غير موجود في السيرفر']);
+      continue;
+    }
+    const err = jailTargetError(message.member, message.author.id, member, jailRole, message.guild);
+    if (err) {
+      skipped.push([targetId, err]);
+      continue;
+    }
+
+    const res = await performJail(
+      message.guild,
+      message.author.id,
+      message.member,
+      member,
+      reason || 'بدون سبب',
+      duration
+    );
+    if (!res.ok) {
+      skipped.push([targetId, res.error]);
+      continue;
+    }
+
+    jailedMembers.push(member);
+    await sendJailRoomMessage(
+      message.guild,
+      `${member} تم سجنك.\nالسبب: ${reason || 'بدون سبب'}\nالمدة: ${res.result.durationLabel}`
+    );
+    await sleep(300);
+  }
+
+  if (!jailedMembers.length) {
+    await message.reply(`❌ لم يُسجن أحد. ${skipped.map(([, why]) => why).join('؛ ')}`);
+    return;
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle('🔒 سجن عبر الرسائل')
+    .setColor(COLOR.red)
+    .setTimestamp(new Date());
+  embed.addFields(
+    { name: 'الإداري', value: `${message.author}`, inline: true },
+    { name: 'عدد المسجونين', value: String(jailedMembers.length), inline: true },
+    { name: 'المدة', value: duration || 'مؤبد', inline: true },
+    { name: 'السبب', value: reason || 'بدون سبب', inline: false }
+  );
+  if (jailedMembers.length) {
+    embed.addFields({
+      name: 'الأعضاء الذين تم سجنهم',
+      value: jailedMembers.slice(0, 20).map((m) => `${m}`).join(' '),
+      inline: false,
+    });
+  }
+  if (skipped.length) {
+    embed.addFields({
+      name: `تم تخطيهم (${skipped.length})`,
+      value: skipped.slice(0, 10).map(([sid, why]) => `\`${sid}\` — ${why}`).join('\n'),
+      inline: false,
+    });
+  }
+  await sendLog(message.guild, embed);
+
+  let summary = `✅ تم سجن ${jailedMembers.length} عضو` + (duration ? ` بمدة ${duration}` : ' مؤبد') + '.';
+  if (skipped.length) summary += ` تخطي ${skipped.length} (راجع سجل اللوق).`;
+  await message.reply(summary);
+});
+
 // ================= المهام الدورية =================
 // فك السجن التلقائي كل 30 ثانية (يكتشف من انتهت مدته حتى أثناء إطفاء البوت)
 async function autoUnjailLoop() {
@@ -1459,7 +1618,20 @@ async function main() {
     process.exit(0);
   });
 
-  await client.login(token);
+  try {
+    await client.login(token);
+  } catch (err) {
+    if (err.code === 4014 || /disallowed intents/i.test(String(err.message || ''))) {
+      console.error(
+        '❌ يجب تفعيل Message Content Intent من بوابة المطورين:\n' +
+          '   discord.com/developers/applications ← Bot ← Privileged Gateway Intents\n' +
+          '   ← فعّل "Message Content Intent" ثم أعد Start (مطلوب لأمر الكتابة: سجن @عضو)'
+      );
+    } else {
+      console.error('❌ فشل الاتصال بديسكورد:', err.message);
+    }
+    process.exit(1);
+  }
 }
 
 if (require.main === module) {

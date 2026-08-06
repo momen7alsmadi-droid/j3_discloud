@@ -1,6 +1,6 @@
 {
   "name": "j3_discloud",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "بوت السجن (Jail Bot) - نسخة JavaScript (discord.js) تعمل على استضافات Node.js مباشرة",
   "main": "bot.js",
   "scripts": {
