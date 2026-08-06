@@ -12,9 +12,15 @@
  *      تثبيتات إضافية، عبر https مدمج في Node).
  *   3) يتأكد من وجود python3 — وإن لم يوجد يثبّته تلقائياً
  *      (apt-get ثم apk كبديل).
- *   4) يثبّت المتطلبات من requirements.txt (discord.py).
- *   5) يشغّل bot.py ويعرض مخرجاته في الكونسول.
- *   6) يعيد توجيه إشارات الإيقاف (SIGTERM/SIGINT) وكود
+ *   4) يتأكد من وجود pip بأربع طرق متتالية:
+ *        أ) pip موجود أصلاً
+ *        ب) python3 -m ensurepip
+ *        ج) apt-get install python3-pip
+ *        د) تنزيل get-pip.py عبر Node (بدون curl) وتشغيله
+ *   5) يثبّت المتطلبات من requirements.txt مع دعم أنظمة
+ *      Debian 12+ (PEP 668: --break-system-packages / --user)
+ *   6) يشغّل bot.py ويعرض مخرجاته في الكونسول.
+ *   7) يعيد توجيه إشارات الإيقاف (SIGTERM/SIGINT) وكود
  *      الخروج — حتى تتوقف العملية فعلاً عند Stop من اللوحة
  *      وتعمل إعادة التشغيل التلقائية بشكل صحيح.
  * =========================================================
@@ -28,17 +34,28 @@ const { spawn, execSync } = require('child_process');
 const GIT_REPO = 'momen7alsmadi-droid/j3_discloud';
 const RAW_BASE = `https://raw.githubusercontent.com/${GIT_REPO}/main`;
 const NEEDED_FILES = ['bot.py', 'requirements.txt', 'config.example.json'];
+const GET_PIP_URL = 'https://bootstrap.pypa.io/get-pip.py';
 
-/** تنفيذ أمر في القشرة مع طباعته في الكونسول */
+/** تنفيذ أمر في القشرة مع طباعته في الكونسول — يرمي خطأ عند الفشل */
 function run(cmd) {
   console.log('> ' + cmd);
   return execSync(cmd, { stdio: 'inherit' });
 }
 
+/** تنفيذ أمر بصمت — يرجع true عند النجاح */
+function tryRun(cmd) {
+  try {
+    execSync(cmd, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** هل python3 (أو python) متوفر؟ */
 function findPython() {
-  try { execSync('python3 --version', { stdio: 'ignore' }); return 'python3'; } catch { /* متابعة */ }
-  try { execSync('python --version', { stdio: 'ignore' }); return 'python'; } catch { /* متابعة */ }
+  if (tryRun('python3 --version')) return 'python3';
+  if (tryRun('python --version')) return 'python';
   return null;
 }
 
@@ -59,8 +76,77 @@ function ensurePython() {
     }
   }
   console.error('❌ تعذر تثبيت Python تلقائياً.');
-  console.error('💡 الحل: اطلب من دعم الاستضافة اختيار إعداد Python، أو تثبيت python3 على الصورة.');
+  console.error('💡 الحل: اطلب من دعم الاستضافة تثبيت python3 على الصورة.');
   process.exit(1);
+}
+
+/** هل pip يعمل مع هذا المفسّر؟ */
+function hasPip(py) {
+  return tryRun(`${py} -m pip --version`);
+}
+
+/** ضمان وجود pip — أربع طرق متتالية */
+function ensurePip(py) {
+  if (hasPip(py)) {
+    console.log('✅ pip موجود');
+    return;
+  }
+  console.log('⚠️ pip غير موجود — أحاول تثبيته...');
+
+  // أ) python3 -m ensurepip (مرفق مع معظم توزيعات Python)
+  if (tryRun(`${py} -m ensurepip --upgrade`)) {
+    if (hasPip(py)) { console.log('✅ pip ثُبّت عبر ensurepip'); return; }
+  }
+
+  // ب) apt-get (إن كنا root — وغالباً نحن كذلك داخل الحاوية)
+  if (tryRun('apt-get update -qq && apt-get install -y -qq python3-pip')) {
+    if (hasPip(py)) { console.log('✅ pip ثُبّت عبر apt'); return; }
+  }
+
+  // ج) تنزيل get-pip.py عبر Node (يعمل بدون curl) وتشغيله بعدة طرق
+  console.log('⬇️ أنزّل get-pip.py من python.org...');
+  const getPip = path.join(__dirname, 'get-pip.py');
+  try {
+    download(GET_PIP_URL, getPip);
+    const variants = [
+      `${py} "${getPip}" --user`,
+      `${py} "${getPip}"`,
+      `${py} "${getPip}" --user --break-system-packages`,
+      `${py} "${getPip}" --break-system-packages`,
+    ];
+    for (const cmd of variants) {
+      if (tryRun(cmd) && hasPip(py)) {
+        console.log('✅ pip ثُبّت عبر get-pip.py');
+        return;
+      }
+    }
+  } catch (e) {
+    console.log('   (فشل تنزيل get-pip.py: ' + e.message + ')');
+  }
+
+  console.error('❌ تعذر تثبيت pip تلقائياً بأي طريقة.');
+  console.error('💡 الحل: اطلب من دعم الاستضافة تنفيذ: apt-get install -y python3-pip');
+  process.exit(1);
+}
+
+/** تثبيت المتطلبات مع دعم PEP 668 (Debian 12+: يمنع التثبيت النظامي) */
+function installRequirements(py, reqFile) {
+  const variants = [
+    `${py} -m pip install --no-cache-dir -r "${reqFile}"`,
+    `${py} -m pip install --no-cache-dir -r "${reqFile}" --break-system-packages`,
+    `${py} -m pip install --no-cache-dir --user -r "${reqFile}"`,
+    `${py} -m pip install --no-cache-dir --user -r "${reqFile}" --break-system-packages`,
+  ];
+  for (const cmd of variants) {
+    try {
+      run(cmd);
+      console.log('✅ تم تثبيت المتطلبات');
+      return;
+    } catch (e) {
+      console.log('   (فشلت — أجرب طريقة أخرى)');
+    }
+  }
+  throw new Error('فشل تثبيت المتطلبات بكل الطرق (تحقق من الاتصال بالإنترنت)');
 }
 
 /** البحث عن bot.py: نفس المجلد ثم مجلد فرعي واحد (حتى لو رُفعت الملفات داخل مجلد) */
@@ -79,7 +165,7 @@ function findBotDir() {
   return null;
 }
 
-/** تنزيل ملف من GitHub (https مدمج — بدون أي مكتبات) */
+/** تنزيل ملف (https مدمج — بدون أي مكتبات) */
 function download(url, dest) {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest);
@@ -139,18 +225,23 @@ async function main() {
   const py = ensurePython();
   console.log('✅ تم العثور على: ' + py);
 
-  // 3) المتطلبات (discord.py) — إن فشل نكمل لأن البوت قد يكون مثبتاً في الصورة
+  // 3) pip (4 طرق ضمان)
+  ensurePip(py);
+
+  // 4) المتطلبات (discord.py) — مع دعم PEP 668
   const reqFile = path.join(botDir, 'requirements.txt');
   if (fs.existsSync(reqFile)) {
     console.log('📦 تثبيت المتطلبات من requirements.txt...');
     try {
-      run(`${py} -m pip install -r "${reqFile}"`);
+      installRequirements(py, reqFile);
     } catch (e) {
-      console.log('⚠️ pip install لم يكتمل — سأحاول تشغيل البوت على أي حال.');
+      console.error('❌ ' + e.message);
+      console.error('💡 تأكد من أن السيرفر متصل بالإنترنت، ثم أعد التشغيل.');
+      process.exit(1);
     }
   }
 
-  // 4) تشغيل البوت (cwd = مجلد bot.py حتى يجد config.json و database.json)
+  // 5) تشغيل البوت (cwd = مجلد bot.py حتى يجد config.json و database.json)
   console.log('🚀 تشغيل البوت: ' + py + ' bot.py');
   const proc = spawn(py, ['bot.py'], { cwd: botDir, stdio: 'inherit' });
 
