@@ -8,6 +8,8 @@
  * =========================================================
  */
 
+console.log('🚀 j3_discloud (JS v2) — نقطة الدخول تعمل ✅');
+
 const bot = require('./bot.js');
 
 bot.main().catch((e) => {
