@@ -1596,12 +1596,6 @@ async function main() {
   // إبقاء الخدمة حية على Render
   startHttpKeepAlive();
 
-  const token = process.env.TOKEN || config.token || '';
-  if (!token) {
-    console.error('الرجاء وضع التوكن في متغير البيئة TOKEN أو داخل config.json.');
-    process.exit(1);
-  }
-
   // المهام الدورية
   setInterval(autoUnjailLoop, 30 * 1000);
   setInterval(keepAliveLoop, 14 * 60 * 1000);
@@ -1618,19 +1612,40 @@ async function main() {
     process.exit(0);
   });
 
-  try {
-    await client.login(token);
-  } catch (err) {
-    if (err.code === 4014 || /disallowed intents/i.test(String(err.message || ''))) {
-      console.error(
-        '❌ يجب تفعيل Message Content Intent من بوابة المطورين:\n' +
-          '   discord.com/developers/applications ← Bot ← Privileged Gateway Intents\n' +
-          '   ← فعّل "Message Content Intent" ثم أعد Start (مطلوب لأمر الكتابة: سجن @عضو)'
-      );
-    } else {
-      console.error('❌ فشل الاتصال بديسكورد:', err.message);
+  // 🔄 انتظار التوكن (لا نخرج أبداً) — يبقي العملية حية وخادم HTTP يرد 200
+  // حتى ينجح فحص بناء النشر التلقائي، ويعيد المحاولة كل 30 ثانية حتى يجد التوكن.
+  for (;;) {
+    // إعادة قراءة .env و config.json (قد يُضاف التوكن لاحقاً)
+    loadDotenvFile(ENV_FILE);
+    config = loadJson(CONFIG_FILE, {
+      token: process.env.TOKEN || '',
+      jail_role_id: config.jail_role_id || '',
+      jail_room_id: config.jail_room_id || '',
+      log_room_id: config.log_room_id || '',
+    });
+
+    const token = process.env.TOKEN || config.token || '';
+    if (!token) {
+      console.error('⏳ لا يوجد توكن بعد — سأعيد المحاولة كل 30 ثانية. (ضعه في ملف .env أو متغير البيئة TOKEN)');
+      await sleep(30000);
+      continue;
     }
-    process.exit(1);
+
+    try {
+      await client.login(token);
+      return; // نجح الاتصال — البوت يعمل
+    } catch (err) {
+      if (err.code === 4014 || /disallowed intents/i.test(String(err.message || ''))) {
+        console.error(
+          '❌ يجب تفعيل Message Content Intent من بوابة المطورين:\n' +
+            '   discord.com/developers/applications ← Bot ← Privileged Gateway Intents\n' +
+            '   ← فعّل "Message Content Intent" ثم أعد Start (مطلوب لأمر الكتابة: سجن @عضو)'
+        );
+      } else {
+        console.error('❌ فشل الاتصال بديسكورد:', err.message, '(سأعيد المحاولة بعد 30 ثانية)');
+      }
+      await sleep(30000);
+    }
   }
 }
 
