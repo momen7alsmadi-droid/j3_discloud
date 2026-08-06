@@ -1,6 +1,6 @@
 {
   "name": "j3_discloud",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "بوت السجن (Jail Bot) - نسخة JavaScript (discord.js) تعمل على استضافات Node.js مباشرة",
   "main": "bot.js",
   "scripts": {
@@ -11,6 +11,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "discord.js": "^14.16.3"
+    "discord.js": "^14.16.3",
+    "mongodb": "^6.8.0"
   }
 }

@@ -119,6 +119,59 @@ function loadDatabase() {
 
 function saveDatabase(db) {
   saveJsonAtomic(DATABASE_FILE, db);
+  if (mongoCollection) {
+    // حفظ في MongoDB (بدون انتظار — لا تعطل البوت لو فشل)
+    mongoCollection
+      .updateOne({ _id: 'db' }, { $set: { data: db } }, { upsert: true })
+      .catch((err) => console.error('⚠️ فشل الحفظ في MongoDB:', err.message));
+  }
+}
+
+// ================= تخزين MongoDB (اختياري) =================
+// عند وضع MONGODB_URI في .env أو متغير البيئة → تُحفظ كل البيانات في القاعدة
+// وإلا يعمل البوت بشكل عادي على database.json المحلي.
+let mongoClient = null;
+let mongoDb = null;
+let mongoCollection = null;
+
+function getMongoUri() {
+  return process.env.MONGODB_URI || process.env.MONGO_URI || '';
+}
+
+async function initMongo() {
+  const uri = getMongoUri();
+  if (!uri) {
+    console.log('💾 التخزين: database.json محلي (لا يوجد MONGODB_URI)');
+    return false;
+  }
+  try {
+    const { MongoClient } = require('mongodb');
+    mongoClient = new MongoClient(uri, { serverSelectionTimeoutMS: 10000 });
+    await mongoClient.connect();
+    mongoDb = mongoClient.db('c2');
+    mongoCollection = mongoDb.collection('j3_jail_state');
+
+    const doc = await mongoCollection.findOne({ _id: 'db' });
+    if (doc && doc.data && Object.keys(doc.data).length) {
+      // القاعدة هي المصدر — نزامن الملف المحلي معها
+      saveJsonAtomic(DATABASE_FILE, doc.data);
+      console.log('🍃 MongoDB متصل — تم تحميل البيانات من القاعدة');
+    } else {
+      // أول اتصال: ترحيل البيانات المحلية (database.json) إلى القاعدة
+      const local = loadJson(DATABASE_FILE, {});
+      if (Object.keys(local).length) {
+        await mongoCollection.updateOne({ _id: 'db' }, { $set: { data: local } }, { upsert: true });
+        console.log('🍃 MongoDB متصل — تم ترحيل database.json إلى القاعدة');
+      } else {
+        console.log('🍃 MongoDB متصل — قاعدة جديدة جاهزة');
+      }
+    }
+    return true;
+  } catch (err) {
+    console.error('⚠️ تعذر الاتصال بـ MongoDB:', err.message);
+    console.error('   سيستمر العمل على database.json المحلي.');
+    return false;
+  }
 }
 
 function getGuildEntry(db, guildId) {
@@ -495,6 +548,29 @@ async function performJail(guild, actorUserId, actorMember, member, reason, dura
   return { ok: true, result: { endTimestamp, durationLabel, priors, channelOverwrites } };
 }
 
+/** فك السجن المشترك (رتبة + استعادة الرتب + استعادة القنوات الخاصة) */
+async function performUnjail(guild, actor, member, record) {
+  const jailRoleId = config.jail_role_id;
+  const jailRole = jailRoleId ? guild.roles.cache.get(String(jailRoleId)) : null;
+  try {
+    if (member) {
+      if (jailRole && member.roles.cache.has(jailRole.id)) {
+        await member.roles.remove(jailRole, 'فك سجن');
+      }
+      const rolesToRestore = (record.original_roles || [])
+        .map((rid) => guild.roles.cache.get(String(rid)))
+        .filter((r) => r);
+      if (rolesToRestore.length) {
+        await member.roles.add(rolesToRestore, 'فك سجن - استعادة الرتب');
+      }
+    }
+  } catch {
+    return { ok: false, error: 'صلاحيات البوت غير كافية لتعديل رتب هذا العضو.' };
+  }
+  if (member) await restoreMemberChannelOverwrites(guild, member, record.channel_overwrites);
+  return { ok: true };
+}
+
 /** نسخة التفاعل: تنفذ السجن وترد الأخطاء عبر followUp */
 async function applyJail(interaction, member, reason, durationStr, isMass) {
   const res = await performJail(
@@ -868,30 +944,11 @@ async function handleCommand(interaction) {
       await saveDatabase(db);
 
       const member = await getMember(interaction.guild, user.id);
-      const jailRoleId = config.jail_role_id;
-      const jailRole = jailRoleId ? interaction.guild.roles.cache.get(String(jailRoleId)) : null;
-
-      try {
-        if (member) {
-          if (jailRole && member.roles.cache.has(jailRole.id)) {
-            await member.roles.remove(jailRole, 'فك سجن');
-          }
-          const rolesToRestore = (record.original_roles || [])
-            .map((rid) => interaction.guild.roles.cache.get(String(rid)))
-            .filter((r) => r);
-          if (rolesToRestore.length) {
-            await member.roles.add(rolesToRestore, 'فك سجن - استعادة الرتب');
-          }
-        }
-      } catch {
-        await interaction.followUp({
-          content: 'صلاحيات البوت غير كافية لتعديل رتب هذا العضو.',
-          ephemeral: true,
-        });
+      const unjailRes = await performUnjail(interaction.guild, interaction.user, member, record);
+      if (!unjailRes.ok) {
+        await interaction.followUp({ content: unjailRes.error, ephemeral: true });
         return;
       }
-
-      if (member) await restoreMemberChannelOverwrites(interaction.guild, member, record.channel_overwrites);
 
       const embed = new EmbedBuilder()
         .setTitle('🔓 فك سجن')
@@ -1431,13 +1488,15 @@ client.on(Events.MessageCreate, async (message) => {
   if (!message.guild || !message.member) return;
 
   const content = message.content.trim();
-  if (!content.startsWith('سجن')) return;
+  const isJail = content.startsWith('سجن');
+  const isUnjail = content.startsWith('تحرير');
+  if (!isJail && !isUnjail) return;
 
   // استخراج الآيديات (منشنات + آيديات مكتوبة)
   const mentionIds = [...message.mentions.users.keys()];
   const idsFromText = extractUserIds(content);
   const targetIds = [...new Set([...mentionIds, ...idsFromText])];
-  if (!targetIds.length) return; // تبدأ بـ سجن بدون منشن — ليست أمراً
+  if (!targetIds.length) return; // بدون منشن — ليست أمراً
 
   // الصلاحية: مطابقة /jail (مطور، أدمن، أو في قائمة الصلاحيات)
   if (!(await messageHasJailPermission(message))) {
@@ -1445,6 +1504,55 @@ client.on(Events.MessageCreate, async (message) => {
     return;
   }
 
+  // ================= 🔓 أمر الكتابة: تحرير @عضو =================
+  if (isUnjail) {
+    const db = loadDatabase();
+    const entry = getGuildEntry(db, message.guild.id);
+    const released = [];
+    const skipped = [];
+
+    for (const targetId of targetIds) {
+      const userKey = String(targetId);
+      const record = entry.prisoners[userKey];
+      if (!record) {
+        skipped.push([targetId, 'غير مسجون']);
+        continue;
+      }
+      const member = await getMember(message.guild, targetId);
+      const res = await performUnjail(message.guild, message.author, member, record);
+      if (!res.ok) {
+        skipped.push([targetId, res.error]);
+        continue;
+      }
+      delete entry.prisoners[userKey];
+      released.push(member || targetId);
+    }
+    await saveDatabase(db);
+
+    if (!released.length) {
+      await message.reply(`❌ لم يُحرَّر أحد. ${skipped.map(([, why]) => why).join('؛ ')}`);
+      return;
+    }
+
+    const unjailEmbed = new EmbedBuilder()
+      .setTitle('🔓 تحرير عبر الرسائل')
+      .setColor(COLOR.green)
+      .setTimestamp(new Date());
+    unjailEmbed.addFields(
+      { name: 'الإداري', value: `${message.author}`, inline: true },
+      { name: 'عدد المُحرَّرين', value: String(released.length), inline: true },
+      {
+        name: 'الأعضاء',
+        value: released.slice(0, 20).map((m) => `${m}`).join(' '),
+        inline: false,
+      }
+    );
+    await sendLog(message.guild, unjailEmbed);
+    await message.reply(`✅ تم تحرير ${released.length} عضو بنجاح.`);
+    return;
+  }
+
+  // ================= 🔒 أمر الكتابة: سجن @عضو [المدة] [السبب] =================
   const jailRoleId = config.jail_role_id;
   if (!jailRoleId) {
     await message.reply('لم يتم تحديد رتبة السجن بعد. استخدم /settings.');
@@ -1633,6 +1741,8 @@ async function main() {
 
     try {
       await client.login(token);
+      // الاتصال بقاعدة البيانات MongoDB (إن وُجد الرابط في .env)
+      await initMongo();
       return; // نجح الاتصال — البوت يعمل
     } catch (err) {
       if (err.code === 4014 || /disallowed intents/i.test(String(err.message || ''))) {
