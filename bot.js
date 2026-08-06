@@ -1468,3 +1468,7 @@ if (require.main === module) {
     process.exit(1);
   });
 }
+
+// تصدير main ليكون index.js قادراً على تشغيل البوت صراحةً
+// (حتى لو كان MAIN_FILE=index.js بدل bot.js)
+module.exports = { main };
