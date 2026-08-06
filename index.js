@@ -8,7 +8,7 @@
  * =========================================================
  */
 
-console.log('🚀 j3_discloud (JS v5) — نقطة الدخول تعمل ✅');
+console.log('🚀 j3_discloud (JS v6) — نقطة الدخول تعمل ✅');
 
 const bot = require('./bot.js');
 

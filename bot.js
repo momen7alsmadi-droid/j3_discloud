@@ -1698,6 +1698,9 @@ function startHttpKeepAlive() {
 
 // ================= التشغيل =================
 async function main() {
+  // إصدار البوت — يُطبع دائماً مهما كان MAIN_FILE (index.js أو bot.js)
+  console.log(`🚀 j3_discloud (JS v6.${require('./package.json').version}) — بدء التشغيل`);
+
   // قراءة ملف .env أولاً (التوكن يكون هنا أو في متغير البيئة TOKEN)
   loadDotenvFile(ENV_FILE);
 
